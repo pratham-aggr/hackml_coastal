@@ -1,0 +1,4 @@
+# ingestion_program/metadata.yaml
+#command: python3 /app/program/ingestion.py /app/input_data /app/output /app/submission
+
+command: python3 /app/program/ingestion.py --input_dir $input --output_dir $output --submission_dir $submission_program
