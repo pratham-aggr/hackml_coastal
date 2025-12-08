@@ -1,5 +1,5 @@
 # ML Challenge 2
-Important note for the baseline model provided in the Google Colab:
+Important note for the baseline model:
 1. The example submission uses 'alternative' thresholds as placeholders for the model.
 
 Please refer to the .mat file for the flooding thresholds ('Seed Coastal Stations Thresholds.mat') in this repository.
