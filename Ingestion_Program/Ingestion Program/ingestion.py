@@ -155,6 +155,6 @@ def main():
 
     run_ingestion(input_dir, output_dir, submission_dir, work_dir)
 
-
+    
 if __name__ == "__main__":
     main()

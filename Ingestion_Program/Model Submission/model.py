@@ -4,6 +4,7 @@ Participant code-submission baseline.
 Usage (called by ingestion):
 python -m model --train_hourly <csv> --test_hourly <csv> --test_index <csv> --predictions_out <csv>
 """
+from baseline_model_xgboost_v3 import X_test
 import argparse, pandas as pd, numpy as np
 from pathlib import Path
 
