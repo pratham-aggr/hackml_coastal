@@ -65,9 +65,10 @@ class TemporalBlock(nn.Module):
         return self.relu(out + res)
 
 class TCNModel(nn.Module):
-    """Temporal Convolutional Network for sequence prediction"""
-    def __init__(self, num_inputs=4, num_channels=[64, 128, 64], kernel_size=3, dropout=0.3, output_size=14):
+    """Improved Temporal Convolutional Network for sequence prediction"""
+    def __init__(self, num_inputs=4, num_channels=[128, 256, 128, 64], kernel_size=3, dropout=0.2, output_size=14):
         super(TCNModel, self).__init__()
+        # Deeper architecture with more capacity
         layers = []
         num_levels = len(num_channels)
         for i in range(num_levels):
@@ -78,25 +79,43 @@ class TCNModel(nn.Module):
                                      padding=(kernel_size-1) * dilation_size, dropout=dropout)]
 
         self.network = nn.Sequential(*layers)
-        self.linear1 = nn.Linear(num_channels[-1], num_channels[-1] // 2)
-        self.bn = nn.BatchNorm1d(num_channels[-1] // 2)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(num_channels[-1] // 2, output_size)
-        self.sigmoid = nn.Sigmoid()
+        
+        # Global average pooling over time dimension to capture all timesteps
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
+        
+        # Deeper fully connected layers with batch normalization
+        self.linear1 = nn.Linear(num_channels[-1], num_channels[-1])
+        self.bn1 = nn.BatchNorm1d(num_channels[-1])
+        self.dropout1 = nn.Dropout(dropout)
+        
+        self.linear2 = nn.Linear(num_channels[-1], num_channels[-1] // 2)
+        self.bn2 = nn.BatchNorm1d(num_channels[-1] // 2)
+        self.dropout2 = nn.Dropout(dropout)
+        
+        self.linear3 = nn.Linear(num_channels[-1] // 2, output_size)
 
     def forward(self, x):
         # Input shape: (batch, seq_len, features) -> (batch, features, seq_len)
         x = x.transpose(1, 2)
-        y = self.network(x)
-        # Take last timestep: (batch, channels, seq_len) -> (batch, channels)
-        y = y[:, :, -1]
-        # Fully connected layers
+        y = self.network(x)  # Shape: (batch, channels, seq_len)
+        
+        # Use global average pooling to aggregate over all timesteps (not just last)
+        y = self.global_pool(y).squeeze(-1)  # Shape: (batch, channels)
+        
+        # Fully connected layers with batch norm and dropout
         y = self.linear1(y)
-        y = self.bn(y)
+        y = self.bn1(y)
         y = torch.relu(y)
-        y = self.dropout(y)
+        y = self.dropout1(y)
+        
         y = self.linear2(y)
-        return self.sigmoid(y)
+        y = self.bn2(y)
+        y = torch.relu(y)
+        y = self.dropout2(y)
+        
+        y = self.linear3(y)
+        # Return logits - sigmoid will be applied in loss function or for final predictions
+        return y
 
 def daily_aggregate(df):
     df = df.copy()
@@ -173,9 +192,9 @@ def main():
             saved_params = model_dict.get('model_params', {})
             tcn_model = model_dict['model_class'](
                 num_inputs=saved_params.get('num_inputs', len(FEATURES)),
-                num_channels=saved_params.get('num_channels', [64, 128, 64]),
+                num_channels=saved_params.get('num_channels', [128, 256, 128, 64]),
                 kernel_size=saved_params.get('kernel_size', 3),
-                dropout=saved_params.get('dropout', 0.3),
+                dropout=saved_params.get('dropout', 0.2),
                 output_size=saved_params.get('output_size', 14)
             )
             tcn_model.load_state_dict(model_dict['model_state_dict'], strict=False)
@@ -205,11 +224,15 @@ def main():
             X_tr_tensor = torch.FloatTensor(X_tr_scaled)
             y_tr_tensor = torch.FloatTensor(y_tr)
 
-            # Initialize TCN model
-            tcn_model = TCNModel(num_inputs=len(FEATURES), num_channels=[64, 128, 64], 
-                                kernel_size=3, dropout=0.3, output_size=14)
+            # Initialize improved TCN model with deeper architecture
+            tcn_model = TCNModel(num_inputs=len(FEATURES), num_channels=[128, 256, 128, 64], 
+                                kernel_size=3, dropout=0.2, output_size=14)
 
-            criterion = nn.BCELoss()
+            # Weighted loss for imbalanced classes using BCEWithLogitsLoss
+            pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+            pos_weight_tensor = torch.tensor([pos_weight]).float()
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
+            
             optimizer = optim.Adam(tcn_model.parameters(), lr=0.001, weight_decay=1e-5)
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
@@ -221,10 +244,10 @@ def main():
             train_loader = DataLoader(train_subset, batch_size=128, shuffle=True)
             val_loader = DataLoader(val_subset, batch_size=128, shuffle=False)
 
-            # Training with early stopping
-            num_epochs = 20
+            # Training with early stopping - more epochs for better convergence
+            num_epochs = 30
             best_val_loss = float('inf')
-            patience = 5
+            patience = 8
             patience_counter = 0
 
             for epoch in range(num_epochs):
@@ -265,9 +288,9 @@ def main():
                 'model_class': TCNModel,
                 'model_params': {
                     'num_inputs': len(FEATURES),
-                    'num_channels': [64, 128, 64],
+                    'num_channels': [128, 256, 128, 64],
                     'kernel_size': 3,
-                    'dropout': 0.3,
+                    'dropout': 0.2,
                     'output_size': 14
                 },
                 'scaler': scaler,
@@ -289,10 +312,11 @@ def main():
         X_te_scaled = scaler.transform(X_te_reshaped).reshape(X_te.shape)
         X_te_tensor = torch.FloatTensor(X_te_scaled)
 
-        # Predict
+        # Predict (apply sigmoid to logits)
         tcn_model.eval()
         with torch.no_grad():
-            y_pred_probs = tcn_model(X_te_tensor).numpy()
+            y_pred_logits = tcn_model(X_te_tensor)
+            y_pred_probs = torch.sigmoid(y_pred_logits).numpy()
         # Improved aggregation: weighted average + max
         weights = np.linspace(0.5, 1.5, 14)
         weighted_mean = np.average(y_pred_probs, axis=1, weights=weights)
