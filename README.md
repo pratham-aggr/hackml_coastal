@@ -1,3 +1,49 @@
+# Coastal Flood Prediction Model
+
+Contents
+- `model.py` : Lightweight model code. Includes data preprocessing helpers, training/prediction entrypoint used by the ingestion program, and a `--demo` mode for synthetic training/evaluation.
+- `model.pkl` : (generated) serialized trained RandomForest model (demo).
+- `requirements.txt` : pinned Python dependencies.
+
+Reproducible pipeline
+
+1) Install dependencies (use a virtual environment):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+2) Demo training (quick, synthetic dataset):
+
+```powershell
+python model.py --demo
+# this trains a RandomForest on a synthetic dataset, prints test metrics,
+# and writes `model.pkl` to the repo root.
+```
+
+3) Full ingestion usage (when you have real CSV inputs):
+
+```powershell
+python model.py \
+  --train_hourly path\to\train_hourly.csv \
+  --test_hourly path\to\test_hourly.csv \
+  --test_index path\to\test_index.csv \
+  --predictions_out out_predictions.csv
+```
+
+Notes about `model.py`:
+- Aggregates hourly sea level to daily mean and daily max.
+- Computes station-specific thresholds (mean + 1.5*std) from training hourly data.
+- Builds 7-day history features and predicts whether any flood occurs in the next 14 days.
+- The `--demo` mode performs a synthetic training run and saves `model.pkl`.
+
+Evaluation
+- The demo prints test accuracy and ROC AUC for the synthetic data split.
+
+Packaging
+- The `submission.zip` artifact contains the files required for submission: `model.py`, `requirements.txt`, `model.pkl`, `README.md`.
 
 # iHARP ML Challenge 2 - 'Predicting Coastal Flooding Events.'
 

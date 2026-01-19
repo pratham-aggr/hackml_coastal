@@ -1,0 +1,13 @@
+numpy==1.24.3
+pandas==2.1.1
+scikit-learn==1.3.0
+scipy
+
+# Matches development environment used in this repo. Install via:
+# pip install -r Requirements.txt
+numpy==1.24.3
+pandas==2.1.1
+scikit-learn==1.3.0
+
+# These match the development environment used for the model in this repository.
+# Install with: pip install -r Requirements.txt
